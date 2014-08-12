@@ -110,6 +110,7 @@ local function addcolumn(self, name, startcol, endcol)
     end
 end
 
+-- TODO should this check for overlapping columns?
 local function definecolumnwidths(self, count, startcol, endcol, ...)
     startcol = tonumber(startcol)
     endcol = tonumber(endcol)
@@ -219,13 +220,26 @@ end
 function writer:header(...)
     if self.mode == 'a' then
         -- FIXME should call reader:header
-        return
+        return 0
     end
     if not self.fieldsdefined then
         error("cannot write to file before columns are defined", 2)
     end
-    writelines(self.source, 0, ...)
-    -- FIXME TODO
+    local count, errmsg, errnum = writelines(self.source, 0, ...)
+    if not count then
+        return nil, errmsg, errnum
+    end
+    if not self.definition[1].name then
+        -- Unnamed columns, don't write a header
+        return count
+    end
+    local line = {}
+    for i = 1,#self.definition do
+        local width = self.definition[i].endcol - self.definition[i].startcol + 1
+        local name = string.sub(self.definition[i].name, 1, width)
+        line[#line+1] = name .. string.rep(' ', width - #name)
+    end
+    return writelines(self.source, 0, table.concat(line))
 end
 
 --- Read one line as a list of values.
@@ -276,7 +290,7 @@ function reader:read(what, expand)
     if expand == nil and type(what) == 'boolean' then
         expand,what = what, 'r'
     end
-    what = what and strsub(what, 1, 1) or 'r'
+    what = what and string.sub(what, 1, 1) or 'r'
     -- The check of fieldsdefined is moved down so a bad argument
     -- will emit an error first.
     if what == 'r' then
