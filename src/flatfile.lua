@@ -1,6 +1,7 @@
 
 --[====[ helper functions ]====]
 
+-- Outputs arbitrary lines. Returns the number of lines written.
 local function writelines(file, count, line, ...)
     if not line then
         return count
@@ -12,12 +13,30 @@ local function writelines(file, count, line, ...)
     return writelines(file, count+1, ...)
 end
 
+-- Raise an error on bad arguments, but with a level parameter.
+local function libraryassert(level, ...)
+    local success, errmsg = ...
+    if not success then
+        error(errmsg, level+1)
+    end
+    return ...
+end
+
 
 --[====[ module contents ]====]
 
+-- Object function tables.
 local flatfile = {}
 local reader = {}
 local writer = {}
+
+--- Closes the file handle.
+local function closeflatfile(self)
+    self.source = nil
+end
+
+reader.close = closeflatfile
+write.close = closeflatfile
 
 --- Open a file to read or write table data from fixed-length records.
 --  
@@ -25,6 +44,7 @@ local writer = {}
 --  @param  mode    string
 --  @return object
 function flatfile.open(source, mode)
+    -- Sanitize the mode string.
     if mode then
         mode = string.sub(mode, 1, 1)
         if mode ~= 'r' and mode ~= 'w' and mode ~= 'a' then
@@ -33,8 +53,10 @@ function flatfile.open(source, mode)
     else
         mode = 'r'
     end
+    -- Open the file if a name is given.
     if type(source) == 'string' then
         local iomode, errmsg, errnum
+        -- Append files need to read the header.
         if mode == 'a' then
             iomode = 'a+'
         else
@@ -45,8 +67,11 @@ function flatfile.open(source, mode)
             return nil, errmsg, errnum
         end
     else
+        -- Just check for the needed function.
         local typ = io.type(source) or type(source)
-        if typ ~= 'file' then
+        --if typ ~= 'file' then
+        if ((mode == 'w' or mode == 'a') and not source.write)
+        or ((mode == 'r' or mode == 'a') and not source.read)
             return nil, "cannot open file from type `"..typ.."'"
         end
     end
@@ -57,7 +82,13 @@ function flatfile.open(source, mode)
     else
         meta = writer
     end
-    return setmetatable({source=source, mode=mode, columns={}}, meta)
+    return setmetatable({
+        source=source,
+        mode=mode,
+        columns={},
+        fieldsdefined=false,
+        extrafields=true,
+    }, meta)
 end
 
 --- Define the names of columns.
@@ -82,27 +113,38 @@ function reader:header(skip, columnname)
     elseif skip == nil then
         skip = 0
     end
+    -- Save the skipped lines to be returned later.
     local skipped = {}
     for i = 1,skip do
         skipped[i] = self.source:read()
     end
+    -- Read until a header line is found. These lines are discarded.
+    -- Are there files with arbitrary header lines that need to be read?
+    -- I think most would have a fixed prologue.
+    -- FIXME TODO
 end
 
 --- Write a header.
 --  
 --  @param  string...
---  @return number
 function writer:header(...)
     if self.mode == 'a' then
+        -- FIXME should call reader:header
         return
     end
-    return writelines(self.source, 0, ...)
+    if not self.fieldsdefined then
+        error("cannot write to file before columns are defined", 2)
+    end
+    writelines(self.source, 0, ...)
+    -- FIXME TODO
 end
 
 --- Read one line as a list of values.
 --  
 --  @return string...
 local function readrowexpand(self)
+    local line, errmsg, errnum = self.source:read()
+    -- FIXME TODO
 end
 
 --- Read one line as a table.
@@ -111,9 +153,12 @@ end
 --  @return table
 local function readrowtable(self, dest)
     dest = dest or {}
+    local line, errmsg, errnum = self.source:read()
+    -- FIXME TODO
     return dest
 end
 
+-- Shim to call readrowtable without extra arguments.
 local function _readrowtable(self)
     return readrowtable(self)
 end
@@ -123,6 +168,9 @@ end
 --  @param  expand  boolean (optional)
 --  @return function|object
 function reader:rows(expand)
+    if not self.fieldsdefined then
+        error("cannot read from file before columns are defined", 2)
+    end
     if expand then
         return readrowexpand, self
     else
@@ -140,25 +188,35 @@ function reader:read(what, expand)
         expand,what = what, 'r'
     end
     what = what and strsub(what, 1, 1) or 'r'
+    -- The check of fieldsdefined is moved down so a bad argument
+    -- will emit an error first.
     if what == 'r' then
+        if not self.fieldsdefined then
+            error("cannot read from file before columns are defined", 2)
+        end
+        -- Read one line.
         if expand then
             return readrowexpand(self)
         else
             return readrowtable(self)
         end
     elseif what == 'a' then
+        if not self.fieldsdefined then
+            error("cannot read from file before columns are defined", 2)
+        end
+        -- Collect all lines into a table.
         local all = {}
         local row, errmsg, errnum = readrowtable(self)
         while row do
             all[#all+1] = row
-            row = readrowtable(self)
+            row, errmsg, errnum = readrowtable(self)
         end
         if errmsg then
             return nil, errmsg, errnum
         end
         return all
     else
-        return nil, "invalid option"
+        return error("invalid option", 2)
     end
 end
 
@@ -168,14 +226,18 @@ end
 --  @param  expand      boolean (optional)
 --  @return table|...
 function reader:readinto(destination, expand)
+    if not self.fieldsdefined then
+        error("cannot read from file before columns are defined", 2)
+    end
+    -- The expand option only makes sense when calling a function.
     if type(destination) == 'function' then
         if expand then
-            return destination(assert(readrowexpand(self)))
+            return destination(libraryassert(2, readrowexpand(self)))
         else
-            return destination(assert(readrowtable(self)))
+            return destination(libraryassert(2, readrowtable(self)))
         end
     else
-        return readrowtable(self, destination)
+        return libraryassert(2, readrowtable(self, destination))
     end
 end
 
@@ -184,6 +246,9 @@ end
 --  @param  string...
 --  @return number
 function writer:write(...)
+    if not self.fieldsdefined then
+        error("cannot write to file before columns are defined", 2)
+    end
 end
 
 -- DELETME not needed, just call write(object)
