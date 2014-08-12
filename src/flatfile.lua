@@ -29,6 +29,8 @@ end
 local flatfile = {}
 local reader = {}
 local writer = {}
+reader.__index = reader
+writer.__index = writer
 
 --- Closes the file handle.
 local function closeflatfile(self)
@@ -36,7 +38,7 @@ local function closeflatfile(self)
 end
 
 reader.close = closeflatfile
-write.close = closeflatfile
+writer.close = closeflatfile
 
 --- Open a file to read or write table data from fixed-length records.
 --  
@@ -71,7 +73,7 @@ function flatfile.open(source, mode)
         local typ = io.type(source) or type(source)
         --if typ ~= 'file' then
         if ((mode == 'w' or mode == 'a') and not source.write)
-        or ((mode == 'r' or mode == 'a') and not source.read)
+        or ((mode == 'r' or mode == 'a') and not source.read) then
             return nil, "cannot open file from type `"..typ.."'"
         end
     end
@@ -85,10 +87,75 @@ function flatfile.open(source, mode)
     return setmetatable({
         source=source,
         mode=mode,
-        columns={},
+        definition={},
         fieldsdefined=false,
         extrafields=true,
     }, meta)
+end
+
+local function addcolumn(self, name, startcol, endcol)
+    local field = {
+        name=name,
+        startcol=startcol,
+        endcol=endcol,
+        optional=false
+    }
+    if name and string.sub(name, -1) == '?' then
+        field.name = string.sub(name, 1, -2)
+        field.optional = true
+    end
+    self.definition[#self.definition+1] = field
+    if not startcol or not endcol then
+        self.fieldsdefined = false
+    end
+end
+
+local function definecolumnwidths(self, count, startcol, endcol, ...)
+    startcol = tonumber(startcol)
+    endcol = tonumber(endcol)
+    if not startcol or not endcol then
+        return false
+    end
+    addcolumn(self, nil, startcol, endcol)
+    if count > 2 then
+        return definecolumnwidths(self, count-2, ...)
+    end
+    return true
+end
+
+local function definenamedcolumns(self, count, name, ...)
+    -- The name '?' means all fields in the header
+    -- should be returned.
+    if name == '?' then
+        self.extrafields = true
+        self.fieldsdefined = false
+        if count > 1 then
+            return definenamedcolumns(self, count-1, ...)
+        end
+        return true
+    end
+    -- Defensive programming.
+    if name == '' then
+        return false
+    end
+    -- The field name can be followed by start and end column numbers.
+    local startcol = ...
+    if type(startcol) == 'number' then
+        local endcol = select(2, ...)
+        if type(endcol) ~= 'number' then
+            return false
+        end
+        addcolumn(self, name, startcol, endcol)
+        if count > 3 then
+            return definenamedcolumns(self, count-3, select(3, ...))
+        end
+    else
+        addcolumn(self, name)
+        if count > 1 then
+            return definenamedcolumns(self, count-1, ...)
+        end
+    end
+    return true
 end
 
 --- Define the names of columns.
@@ -97,6 +164,28 @@ end
 --  2. A list of names: field1, field2, ...
 --  3. A list of names and numbers: field1, start1, end1, ...
 local function definecolumns(self, ...)
+    local typ = type((...))
+    if typ == 'number' then
+        -- Expect only column numbers and no names.
+        self.definition = {}
+        self.fieldsdefined = true
+        self.extrafields = false
+        if not definecolumnwidths(self, select('#', ...), ...) then
+            error("invalid argument", 2)
+        end
+    elseif typ == 'string' then
+        -- Fields are names and maybe column numbers.
+        -- Assume the definition will be complete.
+        -- The fieldsdefined flag will be set false if needed.
+        self.definition = {}
+        self.fieldsdefined = true
+        self.extrafields = false
+        if not definenamedcolumns(self, select('#', ...), ...) then
+            error("invalid argument", 2)
+        end
+    else
+        error("invalid argument", 2)
+    end
 end
 
 reader.columns = definecolumns
