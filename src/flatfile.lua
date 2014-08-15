@@ -373,6 +373,12 @@ function writer:write(...)
     local line = {}
     for i = 1,#self.definition do
         local val = selector(values, i, self.definition[i].name)
+        if val == nil then
+            if not self.definition[i].optional then
+                error("a required field is missing", 2)
+            end
+            val = ""
+        end
         line[self.definition[i].column] = {
             name = tostring(val),
             width = self.definition[i].width
