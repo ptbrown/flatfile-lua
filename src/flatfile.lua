@@ -88,16 +88,18 @@ function flatfile.open(source, mode)
         source=source,
         mode=mode,
         definition={},
+        keys={},
         fieldsdefined=false,
         extrafields=true,
+        linewidth=0,
     }, meta)
 end
 
-local function addcolumn(self, name, startcol, endcol)
+local function addcolumn(self, name, startcol, colwidth)
     local field = {
         name=name,
-        startcol=startcol,
-        endcol=endcol,
+        column=startcol,
+        width=colwidth,
         optional=false
     }
     if name and string.sub(name, -1) == '?' then
@@ -105,56 +107,63 @@ local function addcolumn(self, name, startcol, endcol)
         field.optional = true
     end
     self.definition[#self.definition+1] = field
-    if not startcol or not endcol then
+    if startcol then
+        self.keys[startcol] = field
+        if colwidth then
+            -- FENCEPOST
+            local endcol = startcol + colwidth - 1
+            if endcol > self.linewidth then
+                self.linewidth = endcol
+            end
+        else
+            self.fieldsdefined = false
+        end
+    else
         self.fieldsdefined = false
     end
 end
 
 -- TODO should this check for overlapping columns?
-local function definecolumnwidths(self, count, startcol, endcol, ...)
+local function definecolumnwidths(self, startcol, colwidth, ...)
     startcol = tonumber(startcol)
-    endcol = tonumber(endcol)
-    if not startcol or not endcol then
+    colwidth = tonumber(colwidth)
+    if not startcol then
+        return true
+        end
+    if not colwidth then
         return false
     end
-    addcolumn(self, nil, startcol, endcol)
-    if count > 2 then
-        return definecolumnwidths(self, count-2, ...)
-    end
-    return true
+    addcolumn(self, nil, startcol, colwidth)
+    return definecolumnwidths(self, ...)
 end
 
-local function definenamedcolumns(self, count, name, ...)
+local function definenamedcolumns(self, name, ...)
+    if not name then
+        return true
+    end
     -- The name '?' means all fields in the header
     -- should be returned.
     if name == '?' then
         self.extrafields = true
         self.fieldsdefined = false
-        if count > 1 then
-            return definenamedcolumns(self, count-1, ...)
-        end
-        return true
+        return definenamedcolumns(self, ...)
     end
     -- Defensive programming.
     if name == '' then
         return false
     end
-    -- The field name can be followed by start and end column numbers.
-    local startcol = ...
-    if type(startcol) == 'number' then
-        local endcol = select(2, ...)
-        if type(endcol) ~= 'number' then
+    -- The field name can be followed by column and width numbers.
+    local column = ...
+    if type(column) == 'number' then
+        local width = select(2, ...)
+        if type(width) ~= 'number' then
             return false
         end
-        addcolumn(self, name, startcol, endcol)
-        if count > 3 then
-            return definenamedcolumns(self, count-3, select(3, ...))
-        end
+        addcolumn(self, name, column, width)
+        return definenamedcolumns(self, select(3, ...))
     else
         addcolumn(self, name)
-        if count > 1 then
-            return definenamedcolumns(self, count-1, ...)
-        end
+        return definenamedcolumns(self, ...)
     end
     return true
 end
@@ -171,7 +180,7 @@ local function definecolumns(self, ...)
         self.definition = {}
         self.fieldsdefined = true
         self.extrafields = false
-        if not definecolumnwidths(self, select('#', ...), ...) then
+        if not definecolumnwidths(self, ...) then
             error("invalid argument", 2)
         end
     elseif typ == 'string' then
@@ -181,7 +190,7 @@ local function definecolumns(self, ...)
         self.definition = {}
         self.fieldsdefined = true
         self.extrafields = false
-        if not definenamedcolumns(self, select('#', ...), ...) then
+        if not definenamedcolumns(self, ...) then
             error("invalid argument", 2)
         end
     else
@@ -234,10 +243,18 @@ function writer:header(...)
         return count
     end
     local line = {}
-    for i = 1,#self.definition do
-        local width = self.definition[i].endcol - self.definition[i].startcol + 1
-        local name = string.sub(self.definition[i].name, 1, width)
-        line[#line+1] = name .. string.rep(' ', width - #name)
+    local lastcol,curcol = 1,1  -- FENCEPOST
+    while curcol < self.linewidth do
+        if self.keys[curcol] then
+            local name = string.sub(self.keys[curcol].name,
+                                 1, self.keys[curcol].width)
+            line[#line+1] = string.rep(' ', curcol - lastcol) .. name
+                         .. string.rep(' ', self.keys[curcol].width - #name)
+            lastcol = curcol + self.keys[curcol].width - 1 -- FENCEPOST
+            curcol = lastcol + 1
+        else
+            curcol = curcol + 1
+        end
     end
     return writelines(self.source, 0, table.concat(line))
 end
