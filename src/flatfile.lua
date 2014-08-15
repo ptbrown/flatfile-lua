@@ -95,6 +95,11 @@ function flatfile.open(source, mode)
     }, meta)
 end
 
+--- Append a column to the definition.
+--  
+--  @param  name        string (optional)
+--  @param  startcol    number
+--  @param  colwidth    number
 local function addcolumn(self, name, startcol, colwidth)
     local field = {
         name=name,
@@ -104,14 +109,16 @@ local function addcolumn(self, name, startcol, colwidth)
     }
     if name and string.sub(name, -1) == '?' then
         field.name = string.sub(name, 1, -2)
+        field.column = nil
+        field.width = nil
         field.optional = true
     end
     self.definition[#self.definition+1] = field
-    if startcol then
-        self.keys[startcol] = field
-        if colwidth then
+    if field.column then
+        self.keys[field.column] = field
+        if field.width then
             -- FENCEPOST
-            local endcol = startcol + colwidth - 1
+            local endcol = field.column + field.width - 1
             if endcol > self.linewidth then
                 self.linewidth = endcol
             end
@@ -122,6 +129,8 @@ local function addcolumn(self, name, startcol, colwidth)
         self.fieldsdefined = false
     end
 end
+reader.addcolumn = addcolumn
+writer.addcolumn = addcolumn
 
 -- TODO should this check for overlapping columns?
 local function definecolumnwidths(self, startcol, colwidth, ...)
@@ -133,7 +142,7 @@ local function definecolumnwidths(self, startcol, colwidth, ...)
     if not colwidth then
         return false
     end
-    addcolumn(self, nil, startcol, colwidth)
+    self:addcolumn(nil, startcol, colwidth)
     return definecolumnwidths(self, ...)
 end
 
@@ -159,10 +168,10 @@ local function definenamedcolumns(self, name, ...)
         if type(width) ~= 'number' then
             return false
         end
-        addcolumn(self, name, column, width)
+        self:addcolumn(name, column, width)
         return definenamedcolumns(self, select(3, ...))
     else
-        addcolumn(self, name)
+        self:addcolumn(name)
         return definenamedcolumns(self, ...)
     end
     return true
@@ -197,7 +206,6 @@ local function definecolumns(self, ...)
         error("invalid argument", 2)
     end
 end
-
 reader.columns = definecolumns
 writer.columns = definecolumns
 
@@ -226,6 +234,7 @@ end
 --- Write a header.
 --  
 --  @param  string...
+--  @return number
 function writer:header(...)
     if self.mode == 'a' then
         -- FIXME should call reader:header
@@ -242,21 +251,7 @@ function writer:header(...)
         -- Unnamed columns, don't write a header
         return count
     end
-    local line = {}
-    local lastcol,curcol = 1,1  -- FENCEPOST
-    while curcol < self.linewidth do
-        if self.keys[curcol] then
-            local name = string.sub(self.keys[curcol].name,
-                                 1, self.keys[curcol].width)
-            line[#line+1] = string.rep(' ', curcol - lastcol) .. name
-                         .. string.rep(' ', self.keys[curcol].width - #name)
-            lastcol = curcol + self.keys[curcol].width - 1 -- FENCEPOST
-            curcol = lastcol + 1
-        else
-            curcol = curcol + 1
-        end
-    end
-    return writelines(self.source, 0, table.concat(line))
+    return self:writecolumns(self.keys)
 end
 
 --- Read one line as a list of values.
@@ -369,10 +364,52 @@ function writer:write(...)
     if not self.fieldsdefined then
         error("cannot write to file before columns are defined", 2)
     end
+    local values, selector
+    if type(...) == 'table' and select('#', ...) == 1 then
+        values = ...
+        selector = function(t, i, n) return t[n or i] end
+    else
+        values = {...}
+        selector = function(t, i, n) return t[i] end
+    end
+    local line = {}
+    for i = 1,#self.definition do
+        local val = selector(values, i, self.definition[i].name)
+        line[self.definition[i].column] = {
+            name = tostring(val),
+            width = self.definition[i].width
+        }
+    end
+    if self.mode == 'a' then
+        self.source:seek('end')
+    end
+    return self:writecolumns(line)
 end
 
 -- DELETME not needed, just call write(object)
 --function writer:writefrom(object)
 --end
+
+--- Write a line from a table of columns.
+--  
+--  @param  columns table
+--  @return number
+function writer:writecolumns(columns)
+    local line = {}
+    local lastcol,curcol = 1,1  -- FENCEPOST
+    while curcol < self.linewidth do
+        if columns[curcol] then
+            local name = string.sub(columns[curcol].name,
+                                 1, columns[curcol].width)
+            line[#line+1] = string.rep(' ', curcol - lastcol) .. name
+                         .. string.rep(' ', columns[curcol].width - #name)
+            lastcol = curcol + columns[curcol].width - 1 -- FENCEPOST
+            curcol = lastcol + 1
+        else
+            curcol = curcol + 1
+        end
+    end
+    return writelines(self.source, 0, table.concat(line))
+end
 
 return flatfile
