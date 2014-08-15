@@ -1,3 +1,5 @@
+-- Lua 5.1 compatibility
+local unpack = table.unpack or unpack
 
 --[====[ helper functions ]====]
 
@@ -257,7 +259,17 @@ end
 --  @return string...
 local function readrowexpand(self)
     local line, errmsg, errnum = self.source:read()
-    -- FIXME TODO
+    if not line then
+        return nil, errmsg, errnum
+    end
+    local dest = {}
+    for i = 1, #self.definition do
+        local def = self.definition[i]
+        -- FENCEPOST
+        local val = string.sub(line, def.column, def.column + def.width - 1)
+        dest[i] = string.gsub(val, "^[\t ]*(.-)[\t ]*$", "%1")
+    end
+    return unpack(dest)
 end
 
 --- Read one line as a table.
@@ -267,7 +279,15 @@ end
 local function readrowtable(self, dest)
     dest = dest or {}
     local line, errmsg, errnum = self.source:read()
-    -- FIXME TODO
+    if not line then
+        return nil, errmsg, errnum
+    end
+    for i = 1, #self.definition do
+        local def = self.definition[i]
+        -- FENCEPOST
+        local val = string.sub(line, def.column, def.column + def.width - 1)
+        dest[def.name or i] = string.gsub(val, "^[\t ]*(.-)[\t ]*$", "%1")
+    end
     return dest
 end
 
