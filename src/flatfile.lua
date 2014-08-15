@@ -254,6 +254,19 @@ function writer:header(...)
     return self:writecolumns(self.keys)
 end
 
+local function rowreader(self, line)
+    return function(state, i)
+        i = i + 1
+        local def = state[1][i]
+        if not def then
+            return nil
+        end
+        -- FENCEPOST
+        local val = string.sub(state[2], def.column, def.column + def.width - 1)
+        return i, def.name, string.gsub(val, "^[\t ]*(.-)[\t ]*$", "%1")
+    end, {self.definition, line}, 0
+end
+
 --- Read one line as a list of values.
 --  
 --  @return string...
@@ -263,11 +276,8 @@ local function readrowexpand(self)
         return nil, errmsg, errnum
     end
     local dest = {}
-    for i = 1, #self.definition do
-        local def = self.definition[i]
-        -- FENCEPOST
-        local val = string.sub(line, def.column, def.column + def.width - 1)
-        dest[i] = string.gsub(val, "^[\t ]*(.-)[\t ]*$", "%1")
+    for num,name,val in rowreader(self, line) do
+        dest[num] = val
     end
     return unpack(dest)
 end
@@ -282,11 +292,8 @@ local function readrowtable(self, dest)
     if not line then
         return nil, errmsg, errnum
     end
-    for i = 1, #self.definition do
-        local def = self.definition[i]
-        -- FENCEPOST
-        local val = string.sub(line, def.column, def.column + def.width - 1)
-        dest[def.name or i] = string.gsub(val, "^[\t ]*(.-)[\t ]*$", "%1")
+    for num,name,val in rowreader(self, line) do
+        dest[name or num] = val
     end
     return dest
 end
@@ -391,17 +398,17 @@ function writer:write(...)
         selector = function(t, i, n) return t[i] end
     end
     local line = {}
-    for i = 1,#self.definition do
-        local val = selector(values, i, self.definition[i].name)
+    for num,def in ipairs(self.definition) do
+        local val = selector(values, num, def.name)
         if val == nil then
-            if not self.definition[i].optional then
+            if not def.optional then
                 error("a required field is missing", 2)
             end
             val = ""
         end
-        line[self.definition[i].column] = {
+        line[def.column] = {
             name = tostring(val),
-            width = self.definition[i].width
+            width = def.width
         }
     end
     if self.mode == 'a' then
