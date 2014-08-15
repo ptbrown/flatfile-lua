@@ -109,8 +109,6 @@ local function addcolumn(self, name, startcol, colwidth)
     }
     if name and string.sub(name, -1) == '?' then
         field.name = string.sub(name, 1, -2)
-        field.column = nil
-        field.width = nil
         field.optional = true
     end
     self.definition[#self.definition+1] = field
