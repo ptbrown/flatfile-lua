@@ -24,6 +24,10 @@ local function libraryassert(level, ...)
     return ...
 end
 
+-- escape special chars
+local function escape(s)
+    return string.gsub(s, "[%%%][^$().*?+-]", "%%%0")
+end
 
 --[====[ module contents ]====]
 
@@ -228,7 +232,54 @@ function reader:header(skip, columnname)
     -- Read until a header line is found. These lines are discarded.
     -- Are there files with arbitrary header lines that need to be read?
     -- I think most would have a fixed prologue.
-    -- FIXME TODO
+    local matches = {}
+    for _, def in ipairs(self.definition) do
+        if def.name and not def.optional then
+            matches[#matches+1] = {
+                def = def,
+                pat = "%f[%w](" .. escape(def.name) .. "%f[%W][\t ]*)"
+            }
+        end
+    end
+    local line
+    if #matches > 0 then
+        repeat
+            line = self.source:read()
+            if not line then
+                return nil, "no header found in file"
+            end
+            local found = 0
+            for _,match in ipairs(matches) do
+                local startpos,endpos = string.find(line, match.pat)
+                if startpos then
+                    -- FENCEPOST
+                    match.column = startpos
+                    match.width = endpos - startpos + 1
+                    found = found + 1
+                else
+                    break
+                end
+            end
+        until found == #matches
+    end
+    for _, match in ipairs(matches) do
+        match.def.column = match.column
+        match.def.width = match.width
+    end
+    -- all required headers were found (I hope), add optional fields
+    for _, def in ipairs(self.definition) do
+        if def.name and def.optional then
+            local pat = "%f[%w](" .. escape(def.name) .. "%f[%W][\t ]*)"
+            local startpos, endpos = string.find(line, pat)
+            if startpos then
+                -- FENCEPOST
+                def.column = startpos
+                def.width = endpos - startpos + 1
+            end
+        end
+    end
+    self.fieldsdefined = true
+    return unpack(skipped)
 end
 
 --- Write a header.
@@ -257,14 +308,14 @@ end
 local function rowreader(self, line)
     return function(state, i)
         i = i + 1
-        local def = state[1][i]
+        local def = state.def[i]
         if not def then
             return nil
         end
         -- FENCEPOST
-        local val = string.sub(state[2], def.column, def.column + def.width - 1)
+        local val = string.sub(state.line, def.column, def.column + def.width - 1)
         return i, def.name, string.gsub(val, "^[\t ]*(.-)[\t ]*$", "%1")
-    end, {self.definition, line}, 0
+    end, {def=self.definition, line=line}, 0
 end
 
 --- Read one line as a list of values.
