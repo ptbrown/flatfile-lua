@@ -1,0 +1,15 @@
+Fri, 15 Aug 2014
+
+  |Time    |Location   |IDCode|Note                |ID      
+  |08:10:21|Place1     |551   |abcdefghijklmnopqrst|  13    
+  |10:08:12|Place2     |123450|                    | 005    
+  |00:38:16|Place1     |195   |hairsbreadth        |  73    |
+  |17:23:41|Place1     |483   |     righter        |        |
+  |10:12:23|Place2     |819   |Urban colleagues    | 091    
+  |06:16:53|Place3     |293   |square injustice    |  43    
+  |11:55:00|Place2     |491   |continence          |  40    
+  |07:29:10|Place2     |383   |indefensibly        | 025    
+  |01:07:56|Place3     |445   |misalignment        |  39
+  |07:07:58|Place2     |489   |Mt. Hermes cupful   | 002    
+  |09:26:16|Place1     |441   |curtails platelets  | 028    
+  |23:42:18|Place1     |107   |quilter Jeanette    | 007   
