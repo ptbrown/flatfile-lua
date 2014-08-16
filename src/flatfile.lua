@@ -485,8 +485,8 @@ function writer:writecolumns(columns)
                                  1, columns[curcol].width)
             line[#line+1] = string.rep(' ', curcol - lastcol) .. name
                          .. string.rep(' ', columns[curcol].width - #name)
-            lastcol = curcol + columns[curcol].width - 1 -- FENCEPOST
-            curcol = lastcol + 1
+            lastcol = curcol + columns[curcol].width  -- FENCEPOST
+            curcol = lastcol
         else
             curcol = curcol + 1
         end
