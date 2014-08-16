@@ -38,8 +38,7 @@ columns in the file. This format completely defines the columns.
 
 A field name will be used as the key in the output table. Any character that
 is printable is allowed in the field name, including spaces. Spaces at the
-beginning or end of the name will not be included in the key, although they
-will be count to determining the column width.
+beginning or end of the name will not be included in the key.
 
 All defined fields must be present in each record. When reading by name,
 optional or unknown fields are allowed. Add a `"?"` to the end of a field name
