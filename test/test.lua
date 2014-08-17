@@ -84,3 +84,33 @@ testfile1 = nil
 testlines1 = nil
 testlines2 = nil
 collectgarbage("collect")
+
+testfile2 = assert(io.open(testdir.."test2.txt"))
+f = assert(flatfile.open(testfile2))
+f:columns("Time", "Note", "ID")
+assert(f:header(1))
+
+r = f:read()
+assert(r.Note == "abcdefghijklmnopqrst" and r.ID == "13")
+
+f = nil
+collectgarbage("collect")
+testfile2:seek("set")
+
+f = assert(flatfile.open(testfile2))
+f:columns("Time", "Name?", "Note", "IDCode?")
+assert(f:header(1))
+r = f:read()
+assert(r.Time ~= nil and r.Note ~= nil and r.IDCode ~= nil and r.Name == nil)
+r = f:read()
+assert(r.IDCode == "123450")
+r = {f:read(true)}
+assert(#r == 4)
+assert(r[2] == "")
+r = {}
+assert(f:readinto(r) == r)
+assert(r.Time ~= nil and r.Note ~= nil and r.IDCode ~= nil and r.Name == nil)
+assert(f:readinto(function(...)
+    assert(select('#',...) == 4)
+    return testdir
+end, true) == testdir)

@@ -118,6 +118,9 @@ local function addcolumn(self, name, startcol, colwidth)
         field.optional = true
     end
     self.definition[#self.definition+1] = field
+    if not name then
+        field.name = #self.definition
+    end
     if field.column then
         self.keys[field.column] = field
         if field.width then
@@ -234,7 +237,7 @@ function reader:header(skip, columnname)
     -- I think most would have a fixed prologue.
     local matches = {}
     for _, def in ipairs(self.definition) do
-        if def.name and not def.optional then
+        if type(def.name) == 'string' and not def.optional then
             matches[#matches+1] = {
                 def = def,
                 pat = "%f[%w](" .. escape(def.name) .. "%f[%W][\t ]*)"
@@ -246,6 +249,7 @@ function reader:header(skip, columnname)
         repeat
             line = self.source:read()
             if not line then
+                self.fieldsdefined = false
                 return nil, "no header found in file"
             end
             local found = 0
@@ -263,18 +267,29 @@ function reader:header(skip, columnname)
         until found == #matches
     end
     for _, match in ipairs(matches) do
+        if match.def.column and self.keys[match.def.column] == match.def then
+            self.keys[match.def.column] = nil
+        end
         match.def.column = match.column
         match.def.width = match.width
+        self.keys[match.column] = match.def
     end
     -- all required headers were found (I hope), add optional fields
     for _, def in ipairs(self.definition) do
-        if def.name and def.optional then
+        if type(def.name) == 'string' and def.optional then
+            if def.column and self.keys[def.column] == def then
+                self.keys[def.column] = nil
+            end
             local pat = "%f[%w](" .. escape(def.name) .. "%f[%W][\t ]*)"
             local startpos, endpos = string.find(line, pat)
             if startpos then
                 -- FENCEPOST
                 def.column = startpos
                 def.width = endpos - startpos + 1
+                self.keys[def.column] = def
+            else
+                def.column = nil
+                def.width = nil
             end
         end
     end
@@ -298,24 +313,31 @@ function writer:header(...)
     if not count then
         return nil, errmsg, errnum
     end
-    if not self.definition[1].name then
+    if type(self.definition[1].name) ~= 'string' then
         -- Unnamed columns, don't write a header
         return count
     end
     return self:writecolumns(self.keys)
 end
 
-local function rowreader(self, line)
-    return function(state, i)
-        i = i + 1
-        local def = state.def[i]
-        if not def then
+local function rowreader(definition, line)
+    return function(state, key)
+        local def
+        key, def = next(state.def, key)
+        if not key then
             return nil
         end
         -- FENCEPOST
-        local val = string.sub(state.line, def.column, def.column + def.width - 1)
-        return i, def.name, string.gsub(val, "^[\t ]*(.-)[\t ]*$", "%1")
-    end, {def=self.definition, line=line}, 0
+        local val
+        if def.column then
+            val = string.gsub(string.sub(state.line, def.column,
+                                         def.column + def.width - 1),
+                              "^[\t ]*(.-)[\t ]*$", "%1")
+        else
+            val = ""
+        end
+        return key, def.name, val
+    end, {def=definition, line=line}
 end
 
 --- Read one line as a list of values.
@@ -327,7 +349,7 @@ local function readrowexpand(self)
         return nil, errmsg, errnum
     end
     local dest = {}
-    for num,name,val in rowreader(self, line) do
+    for num,name,val in rowreader(self.definition, line) do
         dest[num] = val
     end
     return unpack(dest)
@@ -343,8 +365,8 @@ local function readrowtable(self, dest)
     if not line then
         return nil, errmsg, errnum
     end
-    for num,name,val in rowreader(self, line) do
-        dest[name or num] = val
+    for num,name,val in rowreader(self.keys, line) do
+        dest[name] = val
     end
     return dest
 end

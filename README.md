@@ -105,6 +105,10 @@ as a table with the defined keys, or if `expand` is true as a list of values.
 Reading multiple records will return a table of tables and the `expand`
 argument is ignored.
 
+Optional fields that are missing from the file will be `nil` in the returned
+table. When returning the values without a table, missing fields will be an
+empty string.
+
 ### readinto
 
         reader:readinto(destination [,expand])
