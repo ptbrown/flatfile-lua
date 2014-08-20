@@ -144,8 +144,22 @@ assert(r.Time ~= nil
    and r.ID ~= nil)
 
 -- Uneven lines, make sure it doesn't read the CR
+
 c = 1
 for r in f:rows() do
     c = c + 1
     assert(string.match(r.ID, "^%d*$"), "row "..c)
 end
+
+f = nil
+collectgarbage("collect")
+testfile2:seek("set")
+
+-- Header with unnamed fields
+f = assert(flatfile.open(testfile2))
+f:columns(4,8, 25,6)
+assert(f:header(1, "Time"))
+r = f:read()
+assert(#r == 2)
+r = f:read()
+assert(r[2] == "123450")

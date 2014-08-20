@@ -242,12 +242,27 @@ function reader:header(skip, columnname)
     -- I think most would have a fixed prologue.
     local matches = {}
     for _, def in ipairs(self.definition) do
+        if type(def.name) == 'string' then
+            -- This is ignored if any named fields were defined
+            columnname = nil
+        end
         if type(def.name) == 'string' and not def.optional then
             matches[#matches+1] = {
                 def = def,
                 pat = "%f[%w](" .. escape(def.name) .. "%f[%W][ ]*)"
             }
         end
+    end
+    -- No names and all fields defined, so there likely isn't a header
+    if #matches == 0 and self.fieldsdefined then
+        if not columnname then
+            return unpack(skipped)
+        end
+        matches[1] = {
+                pat = "%f[%w](" .. escape(columnname) .. "%f[%W][ ]*)"
+        }
+    else
+        self.keys = {}
     end
     local line
     if #matches > 0 then
@@ -270,12 +285,15 @@ function reader:header(skip, columnname)
                 end
             end
         until found == #matches
-    end
-    self.keys = {}
-    for _, match in ipairs(matches) do
-        match.def.column = match.column
-        match.def.width = match.width
-        self.keys[match.column] = match.def
+        if columnname then
+            -- Only search for header, don't redefine columns
+            return unpack(skipped)
+        end
+        for _, match in ipairs(matches) do
+            match.def.column = match.column
+            match.def.width = match.width
+            self.keys[match.column] = match.def
+        end
     end
     -- all required headers were found (I hope), add optional fields
     for _, def in ipairs(self.definition) do
@@ -320,8 +338,11 @@ end
 --  @return number
 function writer:header(...)
     if self.mode == 'a' then
-        -- FIXME should call reader:header
-        return 0
+        self.source:seek('set')
+        local ok, errmsg = reader.header(self, ...)
+        if not ok then
+            error(errmsg, 2)
+        end
     end
     if not self.fieldsdefined then
         error("cannot write to file before columns are defined", 2)
