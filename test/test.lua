@@ -1,32 +1,40 @@
+-- Set up paths
 local testdir = "./"..arg[0]:gsub("test.lua","")
 package.path = testdir.."../src/?.lua;"..package.path
 
+-- 5.1 compatible
 local unpack = table.unpack or unpack
 flatfile = require("flatfile")
 
 testfile1 = assert(io.open(testdir.."test1.txt"))
 f = assert(flatfile.open(testfile1))
+
+-- Default mode is read
 assert(f.source == testfile1 and f.mode == "r")
 
+-- Simple column definition
 f:columns(1,4, 5,4, 9,4)
 assert(f.fieldsdefined and #f.definition == 3)
 
+-- Return an array
 testlines1 = {}
 r = assert(f:read())
 assert(#r == 3)
 testlines1[#testlines1+1] = r
-;
+; -- Return values
 (function(...)
     assert(select('#', ...) == 3)
     testlines1[#testlines1+1] = {...}
 end)(assert(f:read(true)))
 
+-- Iterator
 reader,self = assert(f:rows())
 assert(self == f)
 r = reader(self)
 assert(#r == 3)
 testlines1[#testlines1+1] = r
 
+-- Attempts to read past end-of-file should be safe
 assert(reader(self) == nil)
 assert(f:read() == nil)
 
@@ -34,6 +42,7 @@ f = nil
 collectgarbage("collect")
 testfile1:seek("set")
 
+-- File-like interface
 memfile = {
     write = function(self, ...)
         self[#self+1] = table.concat{...}
@@ -47,6 +56,7 @@ for _,r in ipairs(testlines1) do
 end
 f:close()
 
+-- Written file should be same as what was read
 assert(testfile1:read("*a") == table.concat(memfile))
 
 f = nil
@@ -74,6 +84,7 @@ function deepcompare(t1, t2)
     return false
 end
 
+-- Read entire table
 f = assert(flatfile.open(testfile1))
 f:columns(1,4, 5,4, 9,4)
 testlines2 = assert(f:read("all"))
@@ -85,6 +96,7 @@ testlines1 = nil
 testlines2 = nil
 collectgarbage("collect")
 
+-- Named columns
 testfile2 = assert(io.open(testdir.."test2.txt"))
 f = assert(flatfile.open(testfile2))
 f:columns("Time", "Note", "ID")
@@ -97,6 +109,7 @@ f = nil
 collectgarbage("collect")
 testfile2:seek("set")
 
+-- Optional names
 f = assert(flatfile.open(testfile2))
 f:columns("Time", "Name?", "Note", "IDCode?")
 assert(f:header(1))
@@ -119,6 +132,7 @@ f = nil
 collectgarbage("collect")
 testfile2:seek("set")
 
+-- Wildcard
 f = assert(flatfile.open(testfile2))
 f:columns("Time", "ID", "?")
 assert(f:header(1))
@@ -129,5 +143,9 @@ assert(r.Time ~= nil
    and r.Note ~= nil
    and r.ID ~= nil)
 
-print(r.Time,r.ID,r.Location,r.IDCode,r.Note)
-while f:readinto(function(...) print(...) return true end, true) do end
+-- Uneven lines, make sure it doesn't read the CR
+c = 1
+for r in f:rows() do
+    c = c + 1
+    assert(string.match(r.ID, "^%d*$"), "row "..c)
+end

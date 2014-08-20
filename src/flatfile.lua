@@ -231,7 +231,11 @@ function reader:header(skip, columnname)
     -- Save the skipped lines to be returned later.
     local skipped = {}
     for i = 1,skip do
-        skipped[i] = self.source:read()
+        local line = self.source:read()
+        if not line then
+            break
+        end
+        skipped[i] = string.gsub(line, "[\t\r\n ]+$", "")
     end
     -- Read until a header line is found. These lines are discarded.
     -- Are there files with arbitrary header lines that need to be read?
@@ -241,7 +245,7 @@ function reader:header(skip, columnname)
         if type(def.name) == 'string' and not def.optional then
             matches[#matches+1] = {
                 def = def,
-                pat = "%f[%w](" .. escape(def.name) .. "%f[%W][\t ]*)"
+                pat = "%f[%w](" .. escape(def.name) .. "%f[%W][ ]*)"
             }
         end
     end
@@ -276,7 +280,7 @@ function reader:header(skip, columnname)
     -- all required headers were found (I hope), add optional fields
     for _, def in ipairs(self.definition) do
         if type(def.name) == 'string' and def.optional then
-            local pat = "%f[%w](" .. escape(def.name) .. "%f[%W][\t ]*)"
+            local pat = "%f[%w](" .. escape(def.name) .. "%f[%W][ ]*)"
             local startpos, endpos = string.find(line, pat)
             if startpos then
                 -- FENCEPOST
@@ -292,7 +296,7 @@ function reader:header(skip, columnname)
     if self.extrafields then
         local pos = 1
         while pos <= #line do
-            local startpos, endpos = string.find(line, "(%w+[\t ]*)", pos)
+            local startpos, endpos = string.find(line, "(%w+[ ]*)", pos)
             if not startpos then
                 break
             end
@@ -345,7 +349,7 @@ local function rowreader(definition, line)
         if def.column then
             val = string.gsub(string.sub(state.line, def.column,
                                          def.column + def.width - 1),
-                              "^[\t ]*(.-)[\t ]*$", "%1")
+                              "^[\t ]*(.-)[\t\r\n ]*$", "%1")
         else
             val = ""
         end
