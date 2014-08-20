@@ -114,3 +114,20 @@ assert(f:readinto(function(...)
     assert(select('#',...) == 4)
     return testdir
 end, true) == testdir)
+
+f = nil
+collectgarbage("collect")
+testfile2:seek("set")
+
+f = assert(flatfile.open(testfile2))
+f:columns("Time", "ID", "?")
+assert(f:header(1))
+r = f:read()
+assert(r.Time ~= nil
+   and r.Location ~=nil
+   and r.IDCode ~= nil
+   and r.Note ~= nil
+   and r.ID ~= nil)
+
+print(r.Time,r.ID,r.Location,r.IDCode,r.Note)
+while f:readinto(function(...) print(...) return true end, true) do end

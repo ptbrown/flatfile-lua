@@ -135,6 +135,7 @@ local function addcolumn(self, name, startcol, colwidth)
     else
         self.fieldsdefined = false
     end
+    return field
 end
 reader.addcolumn = addcolumn
 writer.addcolumn = addcolumn
@@ -266,10 +267,8 @@ function reader:header(skip, columnname)
             end
         until found == #matches
     end
+    self.keys = {}
     for _, match in ipairs(matches) do
-        if match.def.column and self.keys[match.def.column] == match.def then
-            self.keys[match.def.column] = nil
-        end
         match.def.column = match.column
         match.def.width = match.width
         self.keys[match.column] = match.def
@@ -277,9 +276,6 @@ function reader:header(skip, columnname)
     -- all required headers were found (I hope), add optional fields
     for _, def in ipairs(self.definition) do
         if type(def.name) == 'string' and def.optional then
-            if def.column and self.keys[def.column] == def then
-                self.keys[def.column] = nil
-            end
             local pat = "%f[%w](" .. escape(def.name) .. "%f[%W][\t ]*)"
             local startpos, endpos = string.find(line, pat)
             if startpos then
@@ -291,6 +287,23 @@ function reader:header(skip, columnname)
                 def.column = nil
                 def.width = nil
             end
+        end
+    end
+    if self.extrafields then
+        local pos = 1
+        while pos <= #line do
+            local startpos, endpos = string.find(line, "(%w+[\t ]*)", pos)
+            if not startpos then
+                break
+            end
+            if not self.keys[startpos] then
+                local name = string.match(line, "%w+", startpos)
+                -- FENCEPOST
+                local width = endpos - startpos + 1
+                local def = self:addcolumn(name, startpos, width)
+                def.optional = true
+            end
+            pos = endpos + 1
         end
     end
     self.fieldsdefined = true
