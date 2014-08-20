@@ -163,3 +163,28 @@ r = f:read()
 assert(#r == 2)
 r = f:read()
 assert(r[2] == "123450")
+
+f = nil
+testfile2 = nil
+collectgarbage("collect")
+
+-- Append to file
+f = assert(flatfile.open(assert(io.open(testdir.."test0.txt", "w")), "w"))
+f:columns("X",1,4, "Y",5,4, "Z",9,4)
+f:header("Test")
+f:write("A1","B1","C1")
+f = nil
+collectgarbage("collect")
+f = assert(flatfile.open(assert(io.open(testdir.."test0.txt", "a+")), "a"))
+f:columns("X", "Y", "Z")
+assert(f:header(1) == "Test")
+assert(f:write("A2","B2","C2"))
+f = nil
+collectgarbage("collect")
+f = assert(io.open(testdir.."test0.txt", "r")):read("*a")
+assert(f == [[Test
+X   Y   Z   
+A1  B1  C1  
+A2  B2  C2  
+]])
+os.remove(testdir.."test0.txt")

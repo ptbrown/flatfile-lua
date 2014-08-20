@@ -140,6 +140,42 @@ end
 reader.addcolumn = addcolumn
 writer.addcolumn = addcolumn
 
+--- Change the columns of a defined field.
+--  
+--  @param  num         number
+--  @param  startcol    number
+--  @param  colwidth    number
+local function modifycolumn(self, num, startcol, colwidth)
+    local field = self.definition[num]
+    if field then
+        if startcol then
+            if field.column and self.keys[field.column] == field then
+                self.keys[field.column] = nil
+            end
+            field.column = startcol
+            field.width = colwidth
+            self.keys[field.column] = field
+            -- FENCEPOST
+            local endcol = field.column + field.width - 1
+            if endcol > self.linewidth then
+                self.linewidth = endcol
+            end
+        else
+            if field.column and self.keys[field.column] == field then
+                self.keys[field.column] = nil
+            end
+            -- FENCEPOST
+            local endcol = field.column + field.width - 1
+            if endcol == self.linewidth then
+                self.linewidth = field.column - 1
+            end
+            table.remove(self.definition, num)
+        end
+    end
+end
+reader.modifycolumn = modifycolumn
+writer.modifycolumn = modifycolumn
+
 -- TODO should this check for overlapping columns?
 local function definecolumnwidths(self, startcol, colwidth, ...)
     startcol = tonumber(startcol)
@@ -241,14 +277,14 @@ function reader:header(skip, columnname)
     -- Are there files with arbitrary header lines that need to be read?
     -- I think most would have a fixed prologue.
     local matches = {}
-    for _, def in ipairs(self.definition) do
+    for num, def in ipairs(self.definition) do
         if type(def.name) == 'string' then
             -- This is ignored if any named fields were defined
             columnname = nil
         end
         if type(def.name) == 'string' and not def.optional then
             matches[#matches+1] = {
-                def = def,
+                def = num,
                 pat = "%f[%w](" .. escape(def.name) .. "%f[%W][ ]*)"
             }
         end
@@ -290,21 +326,17 @@ function reader:header(skip, columnname)
             return unpack(skipped)
         end
         for _, match in ipairs(matches) do
-            match.def.column = match.column
-            match.def.width = match.width
-            self.keys[match.column] = match.def
+            self:modifycolumn(match.def, match.column, match.width)
         end
     end
     -- all required headers were found (I hope), add optional fields
-    for _, def in ipairs(self.definition) do
+    for num, def in ipairs(self.definition) do
         if type(def.name) == 'string' and def.optional then
             local pat = "%f[%w](" .. escape(def.name) .. "%f[%W][ ]*)"
             local startpos, endpos = string.find(line, pat)
             if startpos then
                 -- FENCEPOST
-                def.column = startpos
-                def.width = endpos - startpos + 1
-                self.keys[def.column] = def
+                self:modifycolumn(num, startpos, endpos - startpos + 1)
             else
                 def.column = nil
                 def.width = nil
@@ -339,10 +371,7 @@ end
 function writer:header(...)
     if self.mode == 'a' then
         self.source:seek('set')
-        local ok, errmsg = reader.header(self, ...)
-        if not ok then
-            error(errmsg, 2)
-        end
+        return libraryassert(2, reader.header(self, ...))
     end
     if not self.fieldsdefined then
         error("cannot write to file before columns are defined", 2)
