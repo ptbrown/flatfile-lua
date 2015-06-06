@@ -32,7 +32,9 @@ end
 --[====[ module contents ]====]
 
 -- Object function tables.
-local flatfile = {}
+local flatfile = {
+    version = "flatfile scm"
+}
 local reader = {}
 local writer = {}
 reader.__index = reader
