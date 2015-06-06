@@ -33,7 +33,7 @@ end
 
 -- Object function tables.
 local flatfile = {
-    version = "flatfile scm"
+    version = "flatfile r1"
 }
 local reader = {}
 local writer = {}
